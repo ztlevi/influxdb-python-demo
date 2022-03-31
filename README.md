@@ -3,22 +3,64 @@ https://docs.influxdata.com/influxdb/v2.1/install/?t=CLI+Setup#configure-influxd
 
 https://hub.docker.com/_/influxdb/
 
+Official influxDB python client examples: https://github.com/influxdata/influxdb-client-python/tree/v1.27.0/examples
+
 ``` sh
-python write-parquet.py data/2020-01-ppd42ns.snappy.parquet
+python3 src/write-dataframe.py
+```
+
+Query count
+``` flux
+from(bucket:"{bucket_name}")
+  |> range(start: {current_time-total_duration}, stop: {current_time})
+  |> filter(fn: (r) => r._measurement == "gpu_event")
+  |> group(columns: ["_measurement"])
+  |> count(column: "_value")
 ```
 
 ``` flux
-from(bucket: "aws")
+from(bucket: "b1")
 |> range(start: 0)
 |> count(column: "_value")
-|> limit(n: 10)
+
+from(bucket:"b1")
+  |> range(start: 1648349307000000000, stop: 1648352907000000000)
+  |> filter(fn: (r) => r._measurement == "gpu_event")
+  |> drop(columns: ["_start", "_stop"])
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+  |> group(columns: ["_measurement"])
+  |> aggregateWindow(every: 3s, fn: max, column: "duration", createEmpty: false)
+  |> yield(name: "max")
+
+from(bucket:"b1")
+  |> range(start: 1648349307000000000, stop: 1648352907000000000)
+  |> filter(fn: (r) => r._measurement == "gpu_event")
+  |> drop(columns: ["_start", "_stop"])
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+  |> group(columns: ["_measurement"])
+  |> aggregateWindow(every: 3s, fn: max, column: "duration", createEmpty: false)
+  |> to(bucket: "100x_b1", org: "aws", fieldFn: (r)=>({"id": r.id, "duration": r.duration}))
+
+  |> pivot(rowKey: ["_time"], columnKey: [], valueColumn: "_value")
+
+import "influxdata/influxdb/schema"
+from(bucket:"b1")
+  |> range(start: 1648349307000000000, stop: 1648352907000000000)
+  |> filter(fn: (r) => r._measurement == "gpu_event")
+  |> drop(columns: ["_start", "_stop"])
+  |> group(columns: ["_measurement"])
+  |> aggregateWindow(every: 3s, fn: max, createEmpty: false)
+  |> schema.fieldsAsCols()
+//   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+
+
+from(bucket:"b1")
+  |> range(start: 1648349307000000000, stop: 1648352907000000000)
+  |> filter(fn: (r) => r._measurement == "gpu_event")
+  |> drop(columns: ["_start", "_stop"])
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+  |> group(columns: ["_measurement"])
+  |> aggregateWindow(every: 3s, fn: max, column: "duration", createEmpty: false)
+  |> to(bucket: "100x_b1", org: "aws", fieldFn: (r)=>({"id": r.id, "duration": r.duration}))
 ```
 
-``` sh
-curl --get http://localhost:8086/query \
-  --header "Authorization: Token my-super-secret-auth-token" \
-  --data-urlencode "db=aws" \
-  --data-urlencode "q=SELECT COUNT(*) from aws"
-
-  --data-urlencode "q=SELECT * FROM mem WHERE host=host1;SELECT mean(used_percent) FROM mem WHERE host=host1 GROUP BY time(10m)"
-```
