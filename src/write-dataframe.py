@@ -3,6 +3,7 @@ How to ingest large DataFrame by splitting into chunks.
 """
 import logging
 from rich import print
+import s3fs
 import random
 from datetime import datetime
 import time
@@ -86,6 +87,13 @@ def create_timeline_data(dataframe_rows_count):
 
     df = pd.DataFrame(data=col_data).set_index("time")
     return df
+
+
+def write_to_s3(df, bucket_name):
+    file_path = f"data/{bucket_name}.parquet"
+    df.to_parquet(file_path)
+    fs = s3fs.S3FileSystem()
+    fs.put(file_path, f"s3://zhot-test-data/dataframe/{bucket_name}.parquet")
 
 
 def write_bucket(data_frame, bucket, batch_size=DEFAULT_BATCH_SIZE):
@@ -215,8 +223,14 @@ from(bucket:"{bucket_name}")
 def write_dataframe_helper(
     dataframe_rows_count, bucket_name, batch_size=DEFAULT_BATCH_SIZE
 ):
-    df = create_timeline_data(dataframe_rows_count)
-    write_bucket(df, bucket_name, batch_size)
+    # df = create_timeline_data(dataframe_rows_count)
+    # write_to_s3(df, bucket_name)
+
+    fs = s3fs.S3FileSystem()
+    s3file = f"s3://zhot-test-data/dataframe/{bucket_name}.parquet"
+    with fs.open(s3file, "wb") as f:
+        df = pd.read_parquet(f)
+        write_bucket(df, bucket_name, batch_size)
 
 
 if __name__ == "__main__":
@@ -224,22 +238,21 @@ if __name__ == "__main__":
     num_processes = min(round(cpu_count() * 0.7), num_buckets)
 
     # Single table test
-    # write_dataframe_helper(10_000, "b2")
-    # query_bucket("gpu1", 1)
+    # write_dataframe_helper(100_000, "b2")
 
     # Multiprocessing test
-    write = 0
+    write = 1
     if write == 1:
         with Pool(processes=num_processes) as pool:
             pool.starmap(
                 write_dataframe_helper,
-                [(30_000_000, "gpu" + str(i)) for i in range(1, num_buckets + 1)],
+                [(2_500_000, "gpu" + str(i)) for i in range(1, num_buckets + 1)],
             )
 
-    with Pool(processes=num_processes) as pool:
-        pool.starmap(
-            query_bucket, [("gpu" + str(i), 1) for i in range(1, num_buckets + 1)]
-        )
+    # with Pool(processes=num_processes) as pool:
+    #     pool.starmap(
+    #         query_bucket, [("gpu" + str(i), 1) for i in range(1, num_buckets + 1)]
+    #     )
     # for i in range(1, num_processes + 1):
     #     query_bucket("b" + str(i))
     # task_query()
