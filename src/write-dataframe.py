@@ -11,6 +11,7 @@ from influxdb_client import InfluxDBClient, WriteOptions, TaskCreateRequest
 from influxdb_client.extras import pd, np
 from influxdb_client.client.query_api import QueryOptions
 from multiprocessing.pool import Pool
+from multiprocessing import cpu_count
 
 """
 Enable logging for DataFrame serializer
@@ -210,6 +211,7 @@ from(bucket:"{bucket_name}")
         tasks_api.run_manually(task.id)
         print(task)
 
+
 def write_dataframe_helper(
     dataframe_rows_count, bucket_name, batch_size=DEFAULT_BATCH_SIZE
 ):
@@ -219,7 +221,7 @@ def write_dataframe_helper(
 
 if __name__ == "__main__":
     num_buckets = 10
-    num_processes = min(30, num_buckets)
+    num_processes = min(round(cpu_count() * 0.7), num_buckets)
 
     # Single table test
     # write_dataframe_helper(10_000, "b2")
