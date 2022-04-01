@@ -35,10 +35,12 @@ BILLION = 10**9
 MILLION = 10**6
 
 DEFAULT_BATCH_SIZE = 1_000
+INFLUXDB_TIMEOUT = 12_000_000  # 12s
 
 END_TIME = 1648352907 * BILLION
 TOTAL_DURATION = 3600 * BILLION  # 1h
 TIME_BIN = 3000  # 3000ms for 1200 events
+
 
 def create_timeseries_data(dataframe_rows_count):
     start_times = np.linspace(
@@ -132,7 +134,9 @@ def query(query_string):
     """
     Query: using Table structure
     """
-    with InfluxDBClient(url=url, token=token, org=org, timeout=600_000) as client:
+    with InfluxDBClient(
+        url=url, token=token, org=org, timeout=INFLUXDB_TIMEOUT
+    ) as client:
         query_api = client.query_api()
 
         stime = time.time()
@@ -156,17 +160,8 @@ def query_bucket(bucket_name, zoom=1):
     import "profiler"
     option profiler.enabledProfilers = ["query", "operator"]
     """
-    start_time = END_TIME - (TOTAL_DURATION // 1)
+    start_time = END_TIME - (TOTAL_DURATION // zoom)
     bin = TIME_BIN // zoom
-
-    # XXX
-    dumped_bucket_name = "100x_" + bucket_name
-    with InfluxDBClient(url=url, token=token, org=org, timeout=600_000) as client:
-        buckets_api = client.buckets_api()
-        cur_bucket = buckets_api.find_bucket_by_name(dumped_bucket_name)
-        if cur_bucket:
-            buckets_api.delete_bucket(bucket=cur_bucket)
-        buckets_api.create_bucket(bucket_name=dumped_bucket_name, org=org)
 
     query_string = f"""
 from(bucket:"{bucket_name}")
@@ -176,21 +171,15 @@ from(bucket:"{bucket_name}")
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
   |> group(columns: ["_measurement"])
   |> aggregateWindow(every: {bin}ms, fn: max, column: "duration", createEmpty: false)
-  |> to(bucket: "{dumped_bucket_name}", org: "aws", fieldFn: (r)=>({{"id": r.id, "duration": r.duration}}))
     """
     query(query_string)
-    query_string = f"""
-    from(bucket:"{dumped_bucket_name}")
-  |> range(start: 0)
-  |> filter(fn: (r) => r._measurement == "gpu_event" and r._field == "duration")
-  |> group(columns: ["_measurement"])
-  |> count(column: "_value")
-    """
 
 
-def create_task(bucket_name):
+def create_task(bucket_name, zoom=100):
     dumped_bucket_name = "100x_" + bucket_name
-    with InfluxDBClient(url=url, token=token, org=org, timeout=600_000) as client:
+    with InfluxDBClient(
+        url=url, token=token, org=org, timeout=INFLUXDB_TIMEOUT
+    ) as client:
         buckets_api = client.buckets_api()
         cur_bucket = buckets_api.find_bucket_by_name(dumped_bucket_name)
         if cur_bucket:
@@ -206,12 +195,12 @@ option task = {{
 }}
 
 from(bucket:"{bucket_name}")
-  |> range(start: {END_TIME-TOTAL_DURATION}, stop: {END_TIME})
+  |> range(start: time(v: {END_TIME-TOTAL_DURATION}), stop: time(v: {END_TIME}))
   |> filter(fn: (r) => r._measurement == "gpu_event")
   |> drop(columns: ["_start", "_stop"])
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
   |> group(columns: ["_measurement"])
-  |> aggregateWindow(every: {10*TIME_BIN}ms, fn: max, column: "duration", createEmpty: false)
+  |> aggregateWindow(every: {TIME_BIN//zoom}ms, fn: max, column: "duration", createEmpty: false)
   |> to(bucket: "{dumped_bucket_name}", org: "aws", fieldFn: (r)=>({{"id": r.id, "duration": r.duration}}))
         """
         task_request = TaskCreateRequest(
@@ -220,39 +209,6 @@ from(bucket:"{bucket_name}")
         task = tasks_api.create_task(task_create_request=task_request)
         tasks_api.run_manually(task.id)
         print(task)
-
-
-def task_query():
-    bucket_name = "b1"
-    dumped_bucket_name = "100x_" + bucket_name
-    with InfluxDBClient(url=url, token=token, org=org, timeout=600_000) as client:
-        buckets_api = client.buckets_api()
-        cur_bucket = buckets_api.find_bucket_by_name(dumped_bucket_name)
-        if cur_bucket:
-            buckets_api.delete_bucket(bucket=cur_bucket)
-        buckets_api.create_bucket(bucket_name=dumped_bucket_name, org=org)
-
-    query_string = f"""
-from(bucket:"{bucket_name}")
-  |> range(start: {END_TIME-TOTAL_DURATION}, stop: {END_TIME})
-  |> filter(fn: (r) => r._measurement == "gpu_event")
-  |> drop(columns: ["_start", "_stop"])
-  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
-  |> group(columns: ["_measurement"])
-  |> aggregateWindow(every: {10*TIME_BIN}ms, fn: max, column: "duration", createEmpty: false)
-  |> to(bucket: "{dumped_bucket_name}", org: "aws", fieldFn: (r)=>({{"id": r.id, "duration": r.duration}}))
-    """
-    query(query_string)
-
-    query_string = f"""
-from(bucket:"{dumped_bucket_name}")
-  |> range(start: {END_TIME-TOTAL_DURATION}, stop: {END_TIME})
-  |> filter(fn: (r) => r._measurement == "gpu_event")
-  |> group(columns: ["_measurement"])
-  |> count(column: "_value")
-    """
-    query(query_string)
-
 
 def write_dataframe_helper(
     dataframe_rows_count, bucket_name, batch_size=DEFAULT_BATCH_SIZE
@@ -280,7 +236,7 @@ if __name__ == "__main__":
 
     with Pool(processes=num_processes) as pool:
         pool.starmap(
-            query_bucket, [("gpu" + str(i), 100 * i) for i in range(1, num_buckets + 1)]
+            query_bucket, [("gpu" + str(i), 1) for i in range(1, num_buckets + 1)]
         )
     # for i in range(1, num_processes + 1):
     #     query_bucket("b" + str(i))
