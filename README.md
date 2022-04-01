@@ -9,58 +9,47 @@ Official influxDB python client examples: https://github.com/influxdata/influxdb
 python3 src/write-dataframe.py
 ```
 
-Query count
+## Query total count
 ``` flux
 from(bucket:"{bucket_name}")
-  |> range(start: {current_time-total_duration}, stop: {current_time})
-  |> filter(fn: (r) => r._measurement == "gpu_event")
+  |> range(start: 0)
+  |> filter(fn: (r) => r._measurement == "gpu_event" and r._field == "duration")
   |> group(columns: ["_measurement"])
   |> count(column: "_value")
 ```
 
+## Downsampled query
+
 ``` flux
-from(bucket: "b1")
-|> range(start: 0)
-|> count(column: "_value")
-
-from(bucket:"b1")
-  |> range(start: 1648349307000000000, stop: 1648352907000000000)
+from(bucket:"{bucket_name}")
+  |> range(start: time(v: {start_time}), stop: time(v: {END_TIME}))
   |> filter(fn: (r) => r._measurement == "gpu_event")
   |> drop(columns: ["_start", "_stop"])
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
   |> group(columns: ["_measurement"])
-  |> aggregateWindow(every: 3s, fn: max, column: "duration", createEmpty: false)
-  |> yield(name: "max")
-
-from(bucket:"b1")
-  |> range(start: 1648349307000000000, stop: 1648352907000000000)
-  |> filter(fn: (r) => r._measurement == "gpu_event")
-  |> drop(columns: ["_start", "_stop"])
-  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
-  |> group(columns: ["_measurement"])
-  |> aggregateWindow(every: 3s, fn: max, column: "duration", createEmpty: false)
-  |> to(bucket: "100x_b1", org: "aws", fieldFn: (r)=>({"id": r.id, "duration": r.duration}))
-
-  |> pivot(rowKey: ["_time"], columnKey: [], valueColumn: "_value")
-
-import "influxdata/influxdb/schema"
-from(bucket:"b1")
-  |> range(start: 1648349307000000000, stop: 1648352907000000000)
-  |> filter(fn: (r) => r._measurement == "gpu_event")
-  |> drop(columns: ["_start", "_stop"])
-  |> group(columns: ["_measurement"])
-  |> aggregateWindow(every: 3s, fn: max, createEmpty: false)
-  |> schema.fieldsAsCols()
-//   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
-
-
-from(bucket:"b1")
-  |> range(start: 1648349307000000000, stop: 1648352907000000000)
-  |> filter(fn: (r) => r._measurement == "gpu_event")
-  |> drop(columns: ["_start", "_stop"])
-  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
-  |> group(columns: ["_measurement"])
-  |> aggregateWindow(every: 3s, fn: max, column: "duration", createEmpty: false)
-  |> to(bucket: "100x_b1", org: "aws", fieldFn: (r)=>({"id": r.id, "duration": r.duration}))
+  |> aggregateWindow(every: {bin}ms, fn: max, column: "duration", createEmpty: false)
 ```
 
+## Others
+``` flux
+    #     query_string = f"""
+    # from(bucket:"100x_b1")
+    #   |> range(start: 0)
+    #   |> filter(fn: (r) => r._measurement == "gpu_event")
+    #   |> drop(columns: ["_start", "_stop"])
+    #   |> group(columns: ["_measurement"])
+    #   |> max(column: "_time")
+    #     """
+    #     query_string2 = f"""
+    # from(bucket:"b1")
+    #   |> range(start: 1648349307000000000, stop: 1648352907000000000)
+    #   |> filter(fn: (r) => r._measurement == "gpu_event")
+    #   |> drop(columns: ["_start", "_stop"])
+    #   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+    #   |> group(columns: ["_measurement", "name"])
+    #   |> sum(column: "duration")
+    #   |> group(columns: ["_measurement"])
+    #   |> top(n:3, columns: ["duration"])
+    #     """
+    #     query(query_string)
+```
