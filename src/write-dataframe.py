@@ -89,13 +89,6 @@ def create_timeline_data(dataframe_rows_count):
     return df
 
 
-def write_to_s3(df, bucket_name):
-    file_path = f"data/{bucket_name}.parquet"
-    df.to_parquet(file_path)
-    fs = s3fs.S3FileSystem()
-    fs.put(file_path, f"s3://zhot-test-data/dataframe/{bucket_name}.parquet")
-
-
 def write_bucket(data_frame, bucket, batch_size=DEFAULT_BATCH_SIZE):
     """
     Ingest DataFrame
@@ -223,14 +216,16 @@ from(bucket:"{bucket_name}")
 def write_dataframe_helper(
     dataframe_rows_count, bucket_name, batch_size=DEFAULT_BATCH_SIZE
 ):
-    # df = create_timeline_data(dataframe_rows_count)
-    # write_to_s3(df, bucket_name)
+    df = create_timeline_data(dataframe_rows_count)
 
-    fs = s3fs.S3FileSystem()
-    s3file = f"s3://zhot-test-data/dataframe/{bucket_name}.parquet"
-    with fs.open(s3file, "wb") as f:
-        df = pd.read_parquet(f)
-        write_bucket(df, bucket_name, batch_size)
+    # s3bucket = "s3://zhot-test-data/dataframe"
+    # s3_parquet_file = f"{s3bucket}/{bucket_name}.parquet"
+    # file_system = s3fs.S3FileSystem()
+    # file_system.rm(s3_parquet_file)
+    # df.to_parquet(s3_parquet_file)
+    # df = pd.read_parquet(s3_parquet_file)
+
+    write_bucket(df, bucket_name, batch_size)
 
 
 if __name__ == "__main__":
@@ -238,7 +233,7 @@ if __name__ == "__main__":
     num_processes = min(round(cpu_count() * 0.7), num_buckets)
 
     # Single table test
-    # write_dataframe_helper(100_000, "b2")
+    # write_dataframe_helper(1000_000, "gpu1")
 
     # Multiprocessing test
     write = 1
