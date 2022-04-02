@@ -1,16 +1,17 @@
-
 https://docs.influxdata.com/influxdb/v2.1/install/?t=CLI+Setup#configure-influxdb-with-docker
 
 https://hub.docker.com/_/influxdb/
 
-Official influxDB python client examples: https://github.com/influxdata/influxdb-client-python/tree/v1.27.0/examples
+Official influxDB python client examples:
+https://github.com/influxdata/influxdb-client-python/tree/v1.27.0/examples
 
-``` sh
+```sh
 python3 src/write-dataframe.py
 ```
 
 ## Query total count
-``` flux
+
+```flux
 from(bucket:"{bucket_name}")
   |> range(start: 0)
   |> filter(fn: (r) => r._measurement == "gpu_event" and r._field == "duration")
@@ -20,7 +21,7 @@ from(bucket:"{bucket_name}")
 
 ## Downsampled query
 
-``` flux
+```flux
 from(bucket:"{bucket_name}")
   |> range(start: time(v: {start_time}), stop: time(v: {END_TIME}))
   |> filter(fn: (r) => r._measurement == "gpu_event")
@@ -31,7 +32,8 @@ from(bucket:"{bucket_name}")
 ```
 
 ## Others
-``` flux
+
+```flux
     #     query_string = f"""
     # from(bucket:"100x_b1")
     #   |> range(start: 0)

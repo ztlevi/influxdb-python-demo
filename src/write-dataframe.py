@@ -13,6 +13,7 @@ from influxdb_client.extras import pd, np
 from influxdb_client.client.query_api import QueryOptions
 from multiprocessing.pool import Pool
 from multiprocessing import cpu_count
+import string
 
 """
 Enable logging for DataFrame serializer
@@ -43,6 +44,8 @@ END_TIME = 1648352907 * BILLION
 TOTAL_DURATION = 3600 * BILLION  # 1h
 TIME_BIN = 3000  # 3000ms for 1200 events
 
+ALPHABET = np.array(list(string.ascii_lowercase + " "))
+
 
 def create_timeseries_data(dataframe_rows_count):
     start_times = np.linspace(
@@ -69,14 +72,13 @@ def create_timeline_data(dataframe_rows_count):
         END_TIME - TOTAL_DURATION, END_TIME, num=dataframe_rows_count, dtype=int
     )
     duration = np.random.randint(0, 10 * MILLION, dataframe_rows_count, dtype=int)
+    kernel_names = ["".join(np.random.choice(ALPHABET, size=400)) for _ in range(1000)]
 
     col_data = {
         "time": start_times,
         "duration": duration,
         "id": np.arange(0, dataframe_rows_count, dtype=int),
-        "name": np.random.choice(
-            [f"kernel{i}" for i in range(1000)], size=(dataframe_rows_count,)
-        ),
+        "name": np.random.choice(kernel_names, size=(dataframe_rows_count,)),
         "category": np.random.choice(
             ["py_annotation", "gpu_kernel"], size=(dataframe_rows_count,)
         ),
@@ -233,10 +235,10 @@ if __name__ == "__main__":
     num_processes = min(round(cpu_count() * 0.7), num_buckets)
 
     # Single table test
-    # write_dataframe_helper(1000_000, "gpu1")
+    write_dataframe_helper(2500_000, "gpu1")
 
     # Multiprocessing test
-    write = 1
+    write = 0
     if write == 1:
         with Pool(processes=num_processes) as pool:
             pool.starmap(

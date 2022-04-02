@@ -41,37 +41,43 @@ def parse_row(row: OrderedDict):
     #        f" close={float(row['VIX Close'])},high={float(row['VIX High'])},low={float(row['VIX Low'])},open={float(row['VIX Open'])} " \
     #        f" {int(time)}"
 
-    return Point("financial-analysis") \
-        .tag("type", "vix-daily") \
-        .field("open", float(row['VIX Open'])) \
-        .field("high", float(row['VIX High'])) \
-        .field("low", float(row['VIX Low'])) \
-        .field("close", float(row['VIX Close'])) \
-        .time(row['Date'])
+    return (
+        Point("financial-analysis")
+        .tag("type", "vix-daily")
+        .field("open", float(row["VIX Open"]))
+        .field("high", float(row["VIX High"]))
+        .field("low", float(row["VIX Low"]))
+        .field("close", float(row["VIX Close"]))
+        .time(row["Date"])
+    )
 
 
 """
 Converts vix-daily.csv into sequence of data point
 """
-data = rx \
-    .from_iterable(DictReader(open('vix-daily.csv', 'r'))) \
-    .pipe(ops.map(lambda row: parse_row(row)))
+data = rx.from_iterable(DictReader(open("vix-daily.csv", "r"))).pipe(
+    ops.map(lambda row: parse_row(row))
+)
 
 TOKEN = "my-super-secret-auth-token"
-BUCKET="my-bucket"
+BUCKET = "my-bucket"
 ORG = "aws"
 
-with InfluxDBClient(url="http://localhost:8086", token=TOKEN, org=ORG, debug=True) as client:
+with InfluxDBClient(
+    url="http://localhost:8086", token=TOKEN, org=ORG, debug=True
+) as client:
     buckets_api = client.buckets_api()
     test_bucket = buckets_api.find_bucket_by_name(BUCKET)
     if test_bucket:
         buckets_api.delete_bucket(bucket=test_bucket)
-    buckets_api.create_bucket(bucket_name =BUCKET, org=ORG)
+    buckets_api.create_bucket(bucket_name=BUCKET, org=ORG)
 
     """
     Create client that writes data in batches with 50_000 items.
     """
-    with client.write_api(write_options=WriteOptions(batch_size=50_000, flush_interval=10_000)) as write_api:
+    with client.write_api(
+        write_options=WriteOptions(batch_size=50_000, flush_interval=10_000)
+    ) as write_api:
 
         """
         Write data into InfluxDB
@@ -81,10 +87,12 @@ with InfluxDBClient(url="http://localhost:8086", token=TOKEN, org=ORG, debug=Tru
     """
     Querying max value of CBOE Volatility Index
     """
-    query = 'from(bucket:"my-bucket")' \
-            ' |> range(start: 0, stop: now())' \
-            ' |> filter(fn: (r) => r._measurement == "financial-analysis")' \
-            ' |> max()'
+    query = (
+        'from(bucket:"my-bucket")'
+        " |> range(start: 0, stop: now())"
+        ' |> filter(fn: (r) => r._measurement == "financial-analysis")'
+        " |> max()"
+    )
     result = client.query_api().query(query=query)
 
     """
@@ -95,4 +103,4 @@ with InfluxDBClient(url="http://localhost:8086", token=TOKEN, org=ORG, debug=Tru
     print()
     for table in result:
         for record in table.records:
-            print('max {0:5} = {1}'.format(record.get_field(), record.get_value()))
+            print("max {0:5} = {1}".format(record.get_field(), record.get_value()))
