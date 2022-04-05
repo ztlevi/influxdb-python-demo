@@ -19,6 +19,13 @@ from(bucket:"{bucket_name}")
   |> count(column: "_value")
 ```
 
+## Show first 10 rows 
+``` flux
+from(bucket:"{bucket_name}")
+  |> range(start: 0)
+  |> group(columns: ["_measurement"])
+  |> limit(n:10)
+```
 ## Downsampled query
 
 ```flux
