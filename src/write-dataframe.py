@@ -223,17 +223,20 @@ from(bucket:"{bucket_name}")
         query(query_string)
 
 
-def create_task(bucket_name, zoom=100):
-    downsampled_bucket_name = "100x_" + bucket_name
+def create_task(bucket_name, zoom=200, cleanup=False):
+    downsampled_bucket_name = "downsampled_" + bucket_name
+
     with InfluxDBClient(
         url=url, token=token, org=org, timeout=INFLUXDB_TIMEOUT
     ) as client:
         buckets_api = client.buckets_api()
         cur_bucket = buckets_api.find_bucket_by_name(downsampled_bucket_name)
-        if cur_bucket:
+        if cur_bucket and cleanup:
             buckets_api.delete_bucket(bucket=cur_bucket)
-        buckets_api.create_bucket(bucket_name=downsampled_bucket_name, org=org)
+        if not cur_bucket or cleanup:
+            buckets_api.create_bucket(bucket_name=downsampled_bucket_name, org=org)
 
+        bin = TIME_BIN // zoom
         tasks_api = client.tasks_api()
         task_name = "task_" + downsampled_bucket_name
         query_string = f"""
@@ -243,52 +246,66 @@ option task = {{
 }}
 
 from(bucket:"{bucket_name}")
-  |> range(start: time(v: {END_TIME-TOTAL_DURATION}), stop: time(v: {END_TIME}))
+  |> range(start: time(v: 0))
   |> filter(fn: (r) => r._measurement == "gpu_event")
   |> drop(columns: ["_start", "_stop"])
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
   |> group(columns: ["_measurement"])
-  |> aggregateWindow(every: {TIME_BIN//zoom}ms, fn: max, column: "duration", createEmpty: false)
+  |> aggregateWindow(every: {bin}ms, fn: max, column: "duration", createEmpty: false)
   |> to(bucket: "{downsampled_bucket_name}", org: "aws", fieldFn: (r)=>({{"id": r.id, "duration": r.duration}}))
         """
+        print(f"// =============== Dump downsampled data to {downsampled_bucket_name} =================")
         task_request = TaskCreateRequest(
-            flux=query_string, org=org, description="Task Description", status="active"
+            flux=query_string, org=org, description="Task Description", status="inactive"
         )
         task = tasks_api.create_task(task_create_request=task_request)
+        stime = time.time()
         tasks_api.run_manually(task.id)
-        print(task)
+        etime = time.time()
+        print(f"=================== downsampled task takes {etime-stime}s to run ===============")
+
+    count_query_string = f"""
+// =============== Print the num of rows in the downsampled bucket ================
+from(bucket:"{downsampled_bucket_name}")
+  |> range(start: 0)
+  |> filter(fn: (r) => r._measurement == "gpu_event" and r._field == "duration")
+  |> group(columns: ["_measurement"])
+  |> count(column: "_value")
+    """
+    query(count_query_string)
 
 
 def write_dataframe_helper(
     dataframe_rows_count, bucket_name, batch_size=DEFAULT_BATCH_SIZE
 ):
-    df = create_timeline_data(dataframe_rows_count)
+    s3bucket = "s3://zhot-test-data/p4d"
+    s3_parquet_file = f"{s3bucket}/{bucket_name}.parquet"
+    s3_parquet_file = f"data/{bucket_name}.parquet"
 
-    # s3bucket = "s3://zhot-test-data/dataframe"
-    # s3_parquet_file = f"{s3bucket}/{bucket_name}.parquet"
+    # df = create_timeline_data(dataframe_rows_count)
     # Remove uploaded files
     # file_system = s3fs.S3FileSystem()
     # file_system.rm(s3_parquet_file)
-
     # df.to_parquet(s3_parquet_file)
-    # s3_parquet_file = "s3://ottalalo-dev/parquet/mrcnn_p4d_1node_gpu_kernels.parquet"
-    # df = pd.read_parquet(s3_parquet_file)
+
+    df = pd.read_parquet(s3_parquet_file)
 
     df = df.set_index("time")
-    write_bucket(df, bucket_name, batch_size, cleanup=True)
+    # write_bucket(df, bucket_name, batch_size, cleanup=True)
+    create_task(bucket_name, zoom=600, cleanup=True)
     # downsample_task(bucket_name, zoom=1500, run=True, cleanup=True)
 
 
 if __name__ == "__main__":
-    num_buckets = 10
-    num_processes = min(round(cpu_count() * 0.7), num_buckets)
+    num_buckets = 8
+    num_processes = int(min(round(cpu_count() * 0.5), num_buckets))
 
     # Single table test
-    # write_dataframe_helper(2500_000, "gpu1")
+    # write_dataframe_helper(2_500_000, "gpu1")
     # query_bucket("gpu1")
 
     # Multiprocessing test
-    write = 0
+    write = 1
     if write == 1:
         with Pool(processes=num_processes) as pool:
             pool.starmap(
