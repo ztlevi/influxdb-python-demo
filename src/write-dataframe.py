@@ -10,6 +10,7 @@ import time
 
 from influxdb_client import InfluxDBClient, WriteOptions, TaskCreateRequest
 from influxdb_client.extras import pd, np
+from influxdb_client.client.write_api import SYNCHRONOUS
 from influxdb_client.client.query_api import QueryOptions
 from multiprocessing.pool import Pool
 from multiprocessing import cpu_count
@@ -37,7 +38,7 @@ np.random.seed(42)
 BILLION = 10**9
 MILLION = 10**6
 
-DEFAULT_BATCH_SIZE = 1_000
+DEFAULT_BATCH_SIZE = 5_000
 INFLUXDB_TIMEOUT = 12_000_000  # 12s
 
 END_TIME = 1648352907 * BILLION
@@ -112,6 +113,7 @@ def write_bucket(data_frame, bucket, batch_size=DEFAULT_BATCH_SIZE, cleanup=Fals
         """
         with client.write_api(
             write_options=WriteOptions(
+                # write_type=SYNCHRONOUS,
                 batch_size=DEFAULT_BATCH_SIZE,
                 flush_interval=10_000,
                 jitter_interval=2_000,
@@ -124,7 +126,9 @@ def write_bucket(data_frame, bucket, batch_size=DEFAULT_BATCH_SIZE, cleanup=Fals
             write_api.write(
                 bucket=bucket,
                 record=data_frame,
-                data_frame_tag_columns=["category", "name", "precision"],
+                data_frame_tag_columns=["category",
+                                        "name",
+                                        "precision"],
                 data_frame_measurement_name="gpu_event",
             )
             # print(f"Wait to finishing ingesting DataFrame {data_frame.shape}, batch_size: {batch_size}...")
@@ -256,7 +260,7 @@ from(bucket:"{bucket_name}")
         """
         print(f"// =============== Dump downsampled data to {downsampled_bucket_name} =================")
         task_request = TaskCreateRequest(
-            flux=query_string, org=org, description="Task Description", status="inactive"
+            flux=query_string, org=org, description="Task Description", status="active"
         )
         task = tasks_api.create_task(task_create_request=task_request)
         stime = time.time()
@@ -278,21 +282,20 @@ from(bucket:"{downsampled_bucket_name}")
 def write_dataframe_helper(
     dataframe_rows_count, bucket_name, batch_size=DEFAULT_BATCH_SIZE
 ):
-    s3bucket = "s3://zhot-test-data/p4d"
-    s3_parquet_file = f"{s3bucket}/{bucket_name}.parquet"
-    s3_parquet_file = f"data/{bucket_name}.parquet"
+    # s3bucket = "s3://zhot-test-data/kernel"
+    # s3_parquet_file = f"{s3bucket}/{bucket_name}.parquet"
 
-    # df = create_timeline_data(dataframe_rows_count)
+    df = create_timeline_data(dataframe_rows_count)
     # Remove uploaded files
     # file_system = s3fs.S3FileSystem()
     # file_system.rm(s3_parquet_file)
     # df.to_parquet(s3_parquet_file)
 
-    df = pd.read_parquet(s3_parquet_file)
+    # df = pd.read_parquet(s3_parquet_file)
 
     df = df.set_index("time")
-    # write_bucket(df, bucket_name, batch_size, cleanup=True)
-    create_task(bucket_name, zoom=600, cleanup=True)
+    write_bucket(df, bucket_name, batch_size, cleanup=True)
+    create_task(bucket_name, zoom=200, cleanup=True)
     # downsample_task(bucket_name, zoom=1500, run=True, cleanup=True)
 
 
@@ -301,7 +304,7 @@ if __name__ == "__main__":
     num_processes = int(min(round(cpu_count() * 0.5), num_buckets))
 
     # Single table test
-    # write_dataframe_helper(2_500_000, "gpu1")
+    # write_dataframe_helper(1000_000, "gpu1")
     # query_bucket("gpu1")
 
     # Multiprocessing test
@@ -310,7 +313,7 @@ if __name__ == "__main__":
         with Pool(processes=num_processes) as pool:
             pool.starmap(
                 write_dataframe_helper,
-                [(2_500_000, "gpu" + str(i)) for i in range(1, num_buckets + 1)],
+                [(2_500_000,  str(i)) for i in range(1, num_buckets + 1)],
             )
 
     # with Pool(processes=num_processes) as pool:

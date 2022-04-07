@@ -6,6 +6,8 @@ Official influxDB python client examples:
 https://github.com/influxdata/influxdb-client-python/tree/v1.27.0/examples
 
 ```sh
+./data/influxdb2-2.2.0-linux-amd64/start_influx.sh
+
 python3 src/write-dataframe.py
 ```
 
