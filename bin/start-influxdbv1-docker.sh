@@ -4,6 +4,7 @@
 # sudo sysctl -w net.core.rmem_default=26214400
 # docker run --rm influxdb:1.8 influxd config > influxdb-configv1.conf
 
+mkdir -p /data2/influxdb-docker-data-volume-v1/
 sudo rm -rf /data2/influxdb-docker-data-volume-v1/*
 docker run --rm \
     --name influxdbv1 \

@@ -1,6 +1,7 @@
 #!/usr/bin/env zsh
 
 # -v ${0:A:h}/influxdb-configv2.yml:/etc/influxdb2/config.yml \
+mkdir -p /data2/influxdb-docker-data-volume/
 rm -rf /data2/influxdb-docker-data-volume/*
 docker run --rm \
     --name influxdb \
